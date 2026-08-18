@@ -29,8 +29,8 @@ CREATE TABLE waitlist (
 CREATE TABLE activity_log (
   id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
   action TEXT NOT NULL,
-  appointment_id BIGINT REFERENCES appointments(id),
-  waitlist_id BIGINT REFERENCES waitlist(id),
+  appointment_id BIGINT REFERENCES appointments(id) ON DELETE SET NULL,
+  waitlist_id BIGINT REFERENCES waitlist(id) ON DELETE SET NULL,
   details JSONB,
   created_at TIMESTAMP DEFAULT NOW()
 );
@@ -69,3 +69,6 @@ CREATE POLICY "Allow public insert" ON activity_log FOR INSERT WITH CHECK (true)
 
 CREATE POLICY "Allow public read" ON daily_stats FOR SELECT USING (true);
 CREATE POLICY "Allow public update" ON daily_stats FOR UPDATE USING (true);
+
+-- Realtime: publicar cambios de las tablas para las suscripciones del frontend
+ALTER PUBLICATION supabase_realtime ADD TABLE appointments, waitlist, activity_log, daily_stats;
