@@ -98,6 +98,7 @@ export default function Home() {
       // Recargar datos ahora y tras el refill simulado (~2s en el servidor)
       await loadData();
       setTimeout(loadData, 2600);
+      setTimeout(loadData, 4500);
     } catch (err) {
       console.error("Error:", err);
       setError(err.message);
