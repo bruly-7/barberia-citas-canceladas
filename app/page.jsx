@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { Scissors, Bell, Clock, Euro, X, RotateCcw, AlertCircle } from "lucide-react";
 
@@ -26,43 +26,43 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  const loadData = useCallback(async () => {
+    try {
+      const [apptRes, waitRes, logRes, statsRes] = await Promise.all([
+        supabase.from("appointments").select("*").order("created_at", { ascending: false }),
+        supabase.from("waitlist").select("*").order("created_at", { ascending: true }),
+        supabase.from("activity_log").select("*").order("created_at", { ascending: false }).limit(10),
+        supabase
+          .from("daily_stats")
+          .select("*")
+          .eq("date", new Date().toISOString().split("T")[0])
+          .single(),
+      ]);
+
+      if (apptRes.error) throw apptRes.error;
+      if (waitRes.error) throw waitRes.error;
+      if (logRes.error) throw logRes.error;
+
+      setAppointments(apptRes.data || []);
+      setWaitlist(waitRes.data || []);
+      setLog(logRes.data || []);
+
+      if (!statsRes.error && statsRes.data) {
+        setStats({
+          refills: statsRes.data.total_refills || 0,
+          recovered: Number(statsRes.data.total_recovered) || 0,
+        });
+      }
+    } catch (err) {
+      console.error("Error cargando datos:", err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   // Cargar datos iniciales
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        const [apptRes, waitRes, logRes, statsRes] = await Promise.all([
-          supabase.from("appointments").select("*").order("created_at", { ascending: false }),
-          supabase.from("waitlist").select("*").order("created_at", { ascending: true }),
-          supabase.from("activity_log").select("*").order("created_at", { ascending: false }).limit(10),
-          supabase
-            .from("daily_stats")
-            .select("*")
-            .eq("date", new Date().toISOString().split("T")[0])
-            .single(),
-        ]);
-
-        if (apptRes.error) throw apptRes.error;
-        if (waitRes.error) throw waitRes.error;
-        if (logRes.error) throw logRes.error;
-
-        setAppointments(apptRes.data || []);
-        setWaitlist(waitRes.data || []);
-        setLog(logRes.data || []);
-
-        if (!statsRes.error && statsRes.data) {
-          setStats({
-            refills: statsRes.data.total_refills || 0,
-            recovered: statsRes.data.total_recovered || 0,
-          });
-        }
-      } catch (err) {
-        console.error("Error cargando datos:", err);
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     loadData();
 
     // Suscribirse a cambios en tiempo real
@@ -83,7 +83,7 @@ export default function Home() {
     return () => {
       channel.unsubscribe();
     };
-  }, []);
+  }, [loadData]);
 
   const handleCancel = async (appointmentId) => {
     try {
@@ -95,23 +95,9 @@ export default function Home() {
 
       if (!response.ok) throw new Error("Error cancelando cita");
 
-      // Recargar datos
-      const [apptRes, statsRes] = await Promise.all([
-        supabase.from("appointments").select("*").order("created_at", { ascending: false }),
-        supabase
-          .from("daily_stats")
-          .select("*")
-          .eq("date", new Date().toISOString().split("T")[0])
-          .single(),
-      ]);
-
-      setAppointments(apptRes.data || []);
-      if (statsRes.data) {
-        setStats({
-          refills: statsRes.data.total_refills || 0,
-          recovered: statsRes.data.total_recovered || 0,
-        });
-      }
+      // Recargar datos ahora y tras el refill simulado (~2s en el servidor)
+      await loadData();
+      setTimeout(loadData, 2600);
     } catch (err) {
       console.error("Error:", err);
       setError(err.message);

@@ -55,11 +55,17 @@ export async function POST(request) {
     const nextClient = waitlist[0];
     const whatsappUrl = `https://api.whatsapp.com/send?phone=${nextClient.phone.replace(/\D/g, "")}&text=¡Hola ${nextClient.name}! Tenemos un hueco disponible a las ${appointment.time}. ¿Te viene bien?`;
 
+    // Eliminar de lista de espera antes de registrar el aviso (evita bloqueo por FK)
+    const { error: deleteError } = await supabase.from("waitlist").delete().eq("id", nextClient.id);
+    if (deleteError) {
+      console.error("Error eliminando de lista de espera:", deleteError);
+      return Response.json({ error: "Error actualizando lista de espera" }, { status: 500 });
+    }
+
     await supabase.from("activity_log").insert({
       action: `WhatsApp enviado a ${nextClient.name}: "¿Te viene bien a las ${appointment.time}?"`,
-      waitlist_id: nextClient.id,
       appointment_id: appointmentId,
-      details: { whatsappUrl },
+      details: { whatsappUrl, waitlist_client: { id: nextClient.id, name: nextClient.name, phone: nextClient.phone } },
     });
 
     // 4. Actualizar cita a refillada (simulado — en producción esperarías confirmación)
@@ -75,19 +81,23 @@ export async function POST(request) {
         appointment_id: appointmentId,
       });
 
-      // Actualizar stats
+      // Actualizar stats (acumulando sobre los valores del día)
+      const today = new Date().toISOString().split("T")[0];
+      const { data: stats } = await supabase
+        .from("daily_stats")
+        .select("total_refills, total_recovered")
+        .eq("date", today)
+        .maybeSingle();
+
       await supabase.from("daily_stats").upsert(
         {
-          date: new Date().toISOString().split("T")[0],
-          total_refills: 1,
-          total_recovered: appointment.price,
+          date: today,
+          total_refills: (stats?.total_refills || 0) + 1,
+          total_recovered: (Number(stats?.total_recovered) || 0) + Number(appointment.price),
         },
         { onConflict: "date" }
       );
     }, 2000);
-
-    // 5. Eliminar de lista de espera
-    await supabase.from("waitlist").delete().eq("id", nextClient.id);
 
     return Response.json({
       success: true,
